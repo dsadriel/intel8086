@@ -57,6 +57,9 @@ O_noTension db "Tempo sem tensão: ", 0
 ; Outras
 I_end db "fim", 0
 
+CR equ 13 ; Carriage Return
+LF equ 10 ; Line Feed
+
 
 ; ===================================================================
 ;                            CÓDIGO
@@ -93,7 +96,7 @@ I_end db "fim", 0
 	; *Fim do código disponibilizado pelo professor na especificação do trabalho
 	
 	; Realiza o processamento da linha de comando
-	call processCommandLine
+	; call processCommandLine
 
 	; Verifica se houve algum erro na linha de comando
 	cmp ERROR, 1
@@ -122,9 +125,9 @@ I_end db "fim", 0
 	mov FILEHANDLE, ax ; Salva o handle do arquivo de entrada em FILEHANDLE
 	
 	
-	mov bx, INPUTFILE
-	mov dx, STRINGBUFFER
-	call readLine
+	lea bx, INPUTFILE
+	lea dx, STRINGBUFFER
+	;call readLine
 
 	;; # fclose();
 
@@ -138,7 +141,7 @@ I_end db "fim", 0
 	;********************************************************************
 	
 	; Exibe os resultados no console
-	call printResults
+	;call printResults
 
 
 
@@ -154,7 +157,7 @@ I_end db "fim", 0
 	int 21h
 	jc exit ; Se ocorreu algum erro, encerra o programa	
 	mov FILEHANDLE, ax ; Salva o handle do arquivo de saída em FILEHANDLE
-	call writeResults
+	;call writeResults
 	;; # fclose();
 
 	; 6) Encerrar seu programa.		
@@ -190,11 +193,12 @@ fgetc proc near
 	je		fgetcRET		; Se a quantidade de bytes lida for igual a 1, retorna
 	stc 					; Caso contrário define a flag da carry para 1
 	
-	fgetcS1:	
+	fgetcRET:	
 	pop ax
 	pop cx
 	ret
-endp fgetc
+	
+fgetc endp
 
 ;--------------------------------------------------------------------
 ;	fgets(char* s:dx, FILE* f:bx, int max:cx)
@@ -215,17 +219,17 @@ fgets proc near
 	mov cx, 256
 
 	fgets1:
-	mov [dx], 0 ; Limpar o primeiro char 
+	mov byte ptr [dx], 0 ; Limpar o primeiro char 
 
 
 	fgetsL:
 		call fgetc
 		jc fgetsError		; Se teve algum erro
 
-		; Se for CR ou LF encerra a leitura da string
-		cmp byte prt [dx], CR
+		; Se for CR ou LF encerra a leitura da string	
+		cmp byte ptr [dx], CR
 		je fgetsCR
-		cmp byte prt [dx], LF
+		cmp byte ptr [dx], LF
 		je fgetsLF
 
 		; Incrementa o ponteiro e retorna ao loop
@@ -236,12 +240,12 @@ fgets proc near
 
 	fgetsCR:
 		call fgetc
-		cmp byte prt [dx], LF
+		cmp byte ptr [dx], LF
 		jne fgetsDecFile	; Se não for um LF decrementa a posição atual do arquivo
 		jmp fgetsEND
 	fgetsLF:
 		call fgetc
-		cmp byte prt [dx], CR
+		cmp byte ptr [dx], CR
 		jne fgetsDecFile ; Se não for um CR decrementa a posição atual do arquivo
 		jmp fgetsEND
 
@@ -269,7 +273,8 @@ fgets proc near
 		stc				; Define a flag de carry = 1
 		pop cx
 		pop bx
-fgetsENDP: endp fgets
+fgetsENDP: 
+fgets endp
 
 ; void formatTime(int t:AX){
 ; 	if(t <= 60)
