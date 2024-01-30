@@ -18,9 +18,10 @@
 ;                             DADOS
 ; ===================================================================
 .data
-STRINGBUFFER db 128 dup (0) ; Buffer para string
-INPUTFILE db 32 dup (0) ; Nome do arquivo de entrada
-OUTPUTFILE db 32 dup (0) ; Nome do arquivo de saída
+STRINGBUFFER db 256 dup (0) ; Buffer para string
+CHARBUFFER	db 0 			; Buffer para char
+INPUTFILE db 256 dup (0) ; Nome do arquivo de entrada
+OUTPUTFILE db 256 dup (0) ; Nome do arquivo de saída
 TENSION db 127 ; Tensão padrão
 ERROR db 0 ; Flag de erro
 FILEHANDLE dw 0 ; Handle de arquivo
@@ -112,11 +113,17 @@ I_end db "fim", 0
 	mov al, 0 ; Modo de leitura
 	lea dx, INPUTFILE ; Nome do arquivo de entrada
 	int 21h
-	jc exit ; Se ocorreu algum erro, encerra o programa
-	mov FILEHANDLE, ax ; Salva o handle do arquivo de entrada em FILEHANDLE
+	jnc fileReadSucess ; Se ocorreu algum erro, encerra o programa
 
+	; COMENTAR
 	
-	; Realiza o processamento do arquivo de entrada
+
+	fileReadSucess:
+	mov FILEHANDLE, ax ; Salva o handle do arquivo de entrada em FILEHANDLE
+	
+	
+	mov bx, INPUTFILE
+	mov dx, STRINGBUFFER
 	call readLine
 
 	;; # fclose();
@@ -161,6 +168,109 @@ exit:
 ;--------------------------------------------------------------------
 ;                            PROCEDIMENTOS
 ;--------------------------------------------------------------------
+
+;--------------------------------------------------------------------
+;	fgetc(char* b:dx, FILE* f:bx)
+;	ENTRADA:
+;		dx: ponteiro para buffer do char
+;		bx: file handle
+;	SAIDA:
+;		CF=0 se sucesso, CF=1 caso contrário
+;--------------------------------------------------------------------
+fgetc proc near
+	push 	cx
+	push 	ax
+
+	mov		cx,1			; Tamanho de leitura (1 byte)
+	mov		ah,3fh	
+	int		21h
+
+	jnc 	fgetcRET		; Se não tiver erro de leitura, retorna
+	cmp		ax, 1
+	je		fgetcRET		; Se a quantidade de bytes lida for igual a 1, retorna
+	stc 					; Caso contrário define a flag da carry para 1
+	
+	fgetcS1:	
+	pop ax
+	pop cx
+	ret
+endp fgetc
+
+;--------------------------------------------------------------------
+;	fgets(char* s:dx, FILE* f:bx, int max:cx)
+;	ENTRADA:
+;		dx: ponteiro para buffer do char
+;		cx: tamanho máximo da string
+;		bx: file handle
+;	SAIDA:
+;		CF=0 se sucesso, CF=1 caso contrário
+;--------------------------------------------------------------------
+fgets proc near
+	push bx
+	push cx
+	push dx
+
+	cmp cx,-1	; Se a tamanho máximo for -1, define o tamanho para 256
+	jne fgets1
+	mov cx, 256
+
+	fgets1:
+	mov [dx], 0 ; Limpar o primeiro char 
+
+
+	fgetsL:
+		call fgetc
+		jc fgetsError		; Se teve algum erro
+
+		; Se for CR ou LF encerra a leitura da string
+		cmp byte prt [dx], CR
+		je fgetsCR
+		cmp byte prt [dx], LF
+		je fgetsLF
+
+		; Incrementa o ponteiro e retorna ao loop
+		inc dx
+		loop fgetsL
+	
+	jmp fgetsEND
+
+	fgetsCR:
+		call fgetc
+		cmp byte prt [dx], LF
+		jne fgetsDecFile	; Se não for um LF decrementa a posição atual do arquivo
+		jmp fgetsEND
+	fgetsLF:
+		call fgetc
+		cmp byte prt [dx], CR
+		jne fgetsDecFile ; Se não for um CR decrementa a posição atual do arquivo
+		jmp fgetsEND
+
+	
+	fgetsDecFile:
+		mov ah, 42h
+		mov al, 01h
+		mov dx, -1
+		int 21h
+		dec dx
+
+
+
+	fgetsEND:
+		dec dx
+		mov [dx], 0; Insiere o '\0' no final da string
+		pop dx
+		pop cx
+		pop bx		
+		jmp fgetsENDP
+
+	fgetsError:
+		pop dx			
+		mov [dx], 0		; Define o primeiro char da string como '\0'
+		stc				; Define a flag de carry = 1
+		pop cx
+		pop bx
+fgetsENDP: endp fgets
+
 ; void formatTime(int t:AX){
 ; 	if(t <= 60)
 ; 		return t;
@@ -202,6 +312,8 @@ exit:
 ; 	printString(line:DX);
 ; }
 
+
+; 
 
 
 
