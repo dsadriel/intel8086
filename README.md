@@ -1,4 +1,4 @@
-# intel8086
+# problemas conhecidos
 
-
-ajustar fgets e fgetc para quando for EOF
+subString está com problemas
+se não encontrar o parametro está dando erro ao inves de ignorar

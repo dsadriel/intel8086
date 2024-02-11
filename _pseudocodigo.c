@@ -116,6 +116,17 @@ int:BX strcmp_(char *a:AX, char *b:AX){
 	//return BX
 }
 
-void readLine(){
+void parseLine(char *l:bx){
 	
+	// Busca o primeiro valor
+	while(*l < '0'){
+		if(*l = ','){
+			error = 1;
+			return;
+		}
+		l++;
+	}
+
+	stringBuffer2 = l;
+
 }

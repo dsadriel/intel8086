@@ -13,52 +13,77 @@
 .model small
 .stack
 
+; ===================================================================
+;                            CONSTANTES
+; ===================================================================
+
+CR equ 13 ; Carriage Return
+LF equ 10 ; Line Feed
+TAB equ 9 ; Tab
+MAXSTRING equ 256 ; Tamanho máximo de uma string
 
 ; ===================================================================
 ;                             DADOS
 ; ===================================================================
 .data
-STRINGBUFFER db 256 dup (0) ; Buffer para string
+STRINGBUFFER db MAXSTRING dup (0) ; Buffer para string
+STRINGBUFFER2 db MAXSTRING dup (0) ; Buffer para string
 CHARBUFFER	db 0 			; Buffer para char
-INPUTFILE db 256 dup (0) ; Nome do arquivo de entrada
-OUTPUTFILE db 256 dup (0) ; Nome do arquivo de saída
-TENSION db 127 ; Tensão padrão
+INPUTFILE db 'a.in', 0; Nome do arquivo de entrada
+db MAXSTRING-4 dup (0) ; Buffer para string
+OUTPUTFILE db 'a.out', 0 ; Nome do arquivo de saída
+db MAXSTRING-4 dup (0) ; Buffer para string
+TENSION dw 127 ; Tensão padrão
 ERROR db 0 ; Flag de erro
 FILEHANDLE dw 0 ; Handle de arquivo
 
 CURRENTLINE dw 0 ; Linha atual do arquivo de entrada
 TOTALTIME dw 0 ; Tempo total de medições
-TENSIONQUALITY db 0 ; Qualidade da tensão
+TENSIONQUALITY dw 0 ; Qualidade da tensão
 NOTENSION dw 0 ; Tempo sem tensão
 
 ; Variáveis para as tensões de cada fase
-F1 db 0
-F2 db 0
-F3 db 0
+TENSIONPHASES dw 3 dup (0)
+
 
 ; Mensagens
 ; Erros
-E_i_withOutParams db "Opcao [-i] sem parametro", 0
-E_o_withOutParams db "Opcao [-o] sem parametro", 0
-E_v_withOutParams db "Opcao [-v] sem parametro", 0
-E_v_outOfRange db "Parametro da opção [-v] deve ser 127 ou 220", 0
+E_i_withOutParams db "Opcao [-i] sem parametro", CR, LF, 0
+E_o_withOutParams db "Opcao [-o] sem parametro", CR, LF, 0
+E_v_withOutParams db "Opcao [-v] sem parametro", CR, LF, 0
+E_v_outOfRange db "Parametro da opcao [-v] deve ser 127 ou 220", CR, LF, 0
 E_lineError_1 db "Linha ", 0
-E_lineError_2 db " inválida: ", 0
+E_lineError_2 db " invalida: ", 0
 
-E_inputFileError db "Erro ao abrir o arquivo de entrada", 0
-E_outputFileError db "Erro ao abrir o arquivo de saída", 0
+E_inputFileError db "Erro ao abrir o arquivo de entrada", CR, LF, 0
+E_outputFileError db "Erro ao abrir o arquivo de saída", CR, LF, 0
 
 ; Resultados
 O_inputFile db "Arquivo de entrada: ", 0
-O_tension db "Valor da tensão: ", 0
-O_totalTime db "Tempo total de medições: ", 0
-O_tensionQuality db "Qualidade da tensão: ", 0
-O_noTension db "Tempo sem tensão: ", 0
+O_tension db "Valor da tensao: ", 0
+O_totalTime db "Tempo total de medicoes: ", 0
+O_tensionQuality db "Qualidade da tensao: ", 0
+O_noTension db "Tempo sem tensao: ", 0
+
 ; Outras
 I_end db "fim", 0
+S_newLine db CR, LF, 0
 
-CR equ 13 ; Carriage Return
-LF equ 10 ; Line Feed
+; Variáveis auxiliares
+auxb_1 db 0
+auxw_1 dw 0
+numS dw 0
+numE dw 0
+current dw 0
+
+; Variáveis utulizadas por prociementos disponibilizados pelo professor
+
+sw_n	dw	0
+sw_f	db	0
+sw_m	dw	0
+
+
+DEBUGMSG db "DEBUG", CR, LF, 0
 
 
 ; ===================================================================
@@ -96,11 +121,65 @@ LF equ 10 ; Line Feed
 	; *Fim do código disponibilizado pelo professor na especificação do trabalho
 	
 	; Realiza o processamento da linha de comando
-	; call processCommandLine
 
-	; Verifica se houve algum erro na linha de comando
+	; Verifica se o argumento -i foi utilizada
+	mov al, 'i'
+	lea dx, INPUTFILE
+	call getCommandLineArgument
+	
+	; Verifica se houve algum erro na busca do argumento
 	cmp ERROR, 1
-	je exit
+	jne getCMDo
+	lea bx, E_i_withOutParams
+	call puts
+	jmp exitProgram
+
+	getCMDo:
+	; Verifica se o argumento -o foi utilizada
+	mov al, 'o'
+	lea dx, OUTPUTFILE
+	call getCommandLineArgument
+
+	; Verifica se houve algum erro na busca do argumento
+	cmp ERROR, 1
+	jne getCMDv
+	lea bx, E_o_withOutParams
+	call puts
+	jmp exitProgram
+
+	getCMDv:
+	; Verifica se o argumento -v foi utilizada
+	mov al, 'v'
+	lea dx, STRINGBUFFER2
+	call getCommandLineArgument
+
+	; Verifica se houve algum erro na busca do argumento
+	cmp ERROR, 1
+	jne getCMDvParse
+	lea bx, E_v_withOutParams
+	call puts
+	jmp exitProgram
+	
+	getCMDvParse:
+	; Verifica se o valor de tensão foi informado
+	cmp STRINGBUFFER2, 0
+	je getCMDvParseEnd
+
+	; Verifica se o valor de tensão é válido
+	lea bx, STRINGBUFFER2
+	call atoi
+	mov TENSION, ax
+
+	cmp TENSION, 127
+	je getCMDvParseEnd
+	cmp TENSION, 220
+	je getCMDvParseEnd
+	; Se o valor de tensão não é válido, exibe uma mensagem de erro e encerra o programa
+	lea bx, E_v_outOfRange
+	call puts
+	jmp exitProgram
+
+	getCMDvParseEnd:
 
 	;********************************************************************
 	; 2) Ler e interpretar as informações do arquivo de dados de entrada.
@@ -116,35 +195,96 @@ LF equ 10 ; Line Feed
 	mov al, 0 ; Modo de leitura
 	lea dx, INPUTFILE ; Nome do arquivo de entrada
 	int 21h
-	jnc fileReadSucess ; Se ocorreu algum erro, encerra o programa
+	jnc fileReadSucess 
 
-	; COMENTAR
-	
+	; Se ocorreu algum erro ao abrir o arquivo, exibe a uma mensagem erro e encerra o programa
+	lea bx, E_inputFileError
+	call puts
+	lea bx, O_inputFile
+	call puts
+	lea bx, INPUTFILE
+	call puts
+	jmp exitProgram
 
 	fileReadSucess:
 	mov FILEHANDLE, ax ; Salva o handle do arquivo de entrada em FILEHANDLE
 	
-	
-	lea bx, INPUTFILE
-	lea dx, STRINGBUFFER
-	;call readLine
+	mov CURRENTLINE, 0 ; Inicializa a variável que armazena a linha atual do arquivo de entrada
+	inputFileLoop:
+		inc CURRENTLINE ; Incrementa a linha atual do arquivo de entrada
 
-	;; # fclose();
+		; Realiza a leitura de uma linha do arquivo de entrada
+		mov ax, FILEHANDLE
+		lea bx, STRINGBUFFER
+		call fgets
 
-	; Se ocorreu algum erro durante o processamento do arquivo de entrada, encerra o programa
+		; Se o tamanho da linha lida for 0, encerra o loop
+		cmp cx, 0
+		je exitProgram
+		
+		; Se a linha lida for menor que 3, pula para o manipulador de erro
+		cmp cx, 3
+		jl inputLineError
+
+		; Verifica se é o final do arquivo se for encerra o loop
+		call checkEOFMarker
+		jc readFileEnd
+
+		call parseLine
+		jc inputLineError
+
+		; Verifica se os valores das tensões estão dentro do intervalo
+		call checkTensionsForQuality
+		jc inputLineNext
+		inc TENSIONQUALITY
+
+		inputLineNext:
+		; Verifica se todas as tensões estão abaixo de 10
+		call checkLowTensions
+		jnc inputLineNext2
+		inc NOTENSION
+
+
+		inputLineNext2:
+		jmp inputFileLoop
+
+		; Manipulador de erro
+		inputLineError:
+		lea bx, E_lineError_1
+		call puts
+		
+		mov ax, CURRENTLINE
+		lea bx, STRINGBUFFER2
+		call itoa
+		call puts
+
+		lea bx, E_lineError_2
+		call puts
+		lea bx, STRINGBUFFER
+		call puts
+		lea bx, S_newLine
+		call puts
+		mov ERROR, 1
+		jmp inputFileLoop
+
+	readFileEnd:
+	; Fecha o arquivo de entrada
+	mov ah, 3eh
+	mov bx, FILEHANDLE ; File handle
+	int 21h
+
 	cmp ERROR, 1
-	je exit
-
-
+	je exitProgram
+	
 	;********************************************************************
 	; 4) Gerar relatório de informações na tela.
 	;********************************************************************
 	
 	; Exibe os resultados no console
-	;call printResults
-
-
-
+	mov ax, CURRENTLINE
+	mov TOTALTIME, ax
+	dec TOTALTIME
+	call printResultsToScreen
 
 	;********************************************************************
 	; 5) Gerar arquivo de relatório.
@@ -155,97 +295,106 @@ LF equ 10 ; Line Feed
 	mov al, 0 ; Modo de escrita
 	lea dx, OUTPUTFILE ; Nome do arquivo de saída
 	int 21h
-	jc exit ; Se ocorreu algum erro, encerra o programa	
+	jc exitProgram ; Se ocorreu algum erro, encerra o programa	
 	mov FILEHANDLE, ax ; Salva o handle do arquivo de saída em FILEHANDLE
-	;call writeResults
-	;; # fclose();
+	
+	call writeResultsToFile
+
+	; Fecha o arquivo de saída
+	mov ah, 3eh
+	mov bx, FILEHANDLE ; File handle
+	int 21h
 
 	; 6) Encerrar seu programa.		
 
-exit:
+exitProgram:
+	nop
 	.exit
-
-
-
 
 ;--------------------------------------------------------------------
 ;                            PROCEDIMENTOS
 ;--------------------------------------------------------------------
 
 ;--------------------------------------------------------------------
-;	fgetc(char* b:dx, FILE* f:bx)
+;	fgetc(char* b:bx, FILE* f:ax)
 ;	ENTRADA:
-;		dx: ponteiro para buffer do char
-;		bx: file handle
+;		bx: ponteiro para buffer do char
+;		ax: file handle
 ;	SAIDA:
 ;		CF=0 se sucesso, CF=1 caso contrário
 ;--------------------------------------------------------------------
 fgetc proc near
-	push 	cx
 	push 	ax
+	push 	bx
+	push 	cx
+
+	mov 	dx, bx
+	mov 	bx, ax
+
 
 	mov		cx,1			; Tamanho de leitura (1 byte)
-	mov		ah,3fh	
+	mov		ah,3Fh	
 	int		21h
-
 	jnc 	fgetcRET		; Se não tiver erro de leitura, retorna
-	cmp		ax, 1
-	je		fgetcRET		; Se a quantidade de bytes lida for igual a 1, retorna
-	stc 					; Caso contrário define a flag da carry para 1
+	cmp		ax, 0			; Se for EOF retorna 0
+	jne 	fgetcRET
+	mov byte ptr [bx], 0
 	
 	fgetcRET:	
-	pop ax
 	pop cx
+	pop bx
+	pop ax
 	ret
 	
 fgetc endp
 
 ;--------------------------------------------------------------------
-;	fgets(char* s:dx, FILE* f:bx, int max:cx)
-;	ENTRADA:
-;		dx: ponteiro para buffer do char
-;		cx: tamanho máximo da string
-;		bx: file handle
+;	fgets(FILE* f:ax, char* s:bx)
+;	ENTRADA:F
+;		ax: file handle
+;		bx: ponteiro para buffer do char
 ;	SAIDA:
 ;		CF=0 se sucesso, CF=1 caso contrário
+;		cx: número de chars lidos
 ;--------------------------------------------------------------------
 fgets proc near
-	push bx
-	push cx
+	push ax	
 	push dx
+	push bx
 
-	cmp cx,-1	; Se a tamanho máximo for -1, define o tamanho para 256
-	jne fgets1
-	mov cx, 256
+	mov cx, 255
 
 	fgets1:
-	mov byte ptr [dx], 0 ; Limpar o primeiro char 
+	mov byte ptr [bx], 0 ; Limpar o primeiro char 
 
 
 	fgetsL:
 		call fgetc
 		jc fgetsError		; Se teve algum erro
 
-		; Se for CR ou LF encerra a leitura da string	
-		cmp byte ptr [dx], CR
+		; Se for CR ou LF encerra verifica o próximo digito
+		cmp byte ptr [bx], CR
 		je fgetsCR
-		cmp byte ptr [dx], LF
+		cmp byte ptr [bx], LF
 		je fgetsLF
 
+		cmp byte ptr [bx], 0 ; Se for o final da string, encerra o procedimento
+		je fgetsEND			
+
 		; Incrementa o ponteiro e retorna ao loop
-		inc dx
+		inc bx
 		loop fgetsL
 	
 	jmp fgetsEND
 
 	fgetsCR:
 		call fgetc
-		cmp byte ptr [dx], LF
-		jne fgetsDecFile	; Se não for um LF decrementa a posição atual do arquivo
+		cmp byte ptr [bx], LF
+		jne fgetsDecFile ; Se não for um LF decrementa a posição atual do arquivo
 		jmp fgetsEND
 	fgetsLF:
 		call fgetc
-		cmp byte ptr [dx], CR
+		cmp byte ptr [bx], CR
 		jne fgetsDecFile ; Se não for um CR decrementa a posição atual do arquivo
 		jmp fgetsEND
 
@@ -257,71 +406,833 @@ fgets proc near
 		int 21h
 		dec dx
 
-
-
+	fgetsError:
+		pop bx			
+		mov [bx], 0		; Define o primeiro char da string como '\0'
+		push bx
+		stc				; Define a flag de carry = 1
+		mov cx, 255		; Retorna o contador para o máximo
+		
 	fgetsEND:
-		dec dx
-		mov [dx], 0; Insiere o '\0' no final da string
+		mov [bx], 0		; Insere o '\0' no final da string
+		neg cx
+		add cx, 255
+		pop bx
 		pop dx
-		pop cx
-		pop bx		
+		pop ax
 		jmp fgetsENDP
 
-	fgetsError:
-		pop dx			
-		mov [dx], 0		; Define o primeiro char da string como '\0'
-		stc				; Define a flag de carry = 1
-		pop cx
-		pop bx
+
 fgetsENDP: 
 fgets endp
 
-; void formatTime(int t:AX){
-; 	if(t <= 60)
-; 		return t;
-; 	if(t > 3600)
-; 		t /= 60;
-	
-; 	int l = t/60;
-; 	int r = t%60;
-	
-; 	return //l:r
-; }
+;--------------------------------------------------------------------
+;	checkEOFMarker(char* str:bx)
+;	ENTRADA: 
+;		bx: ponteiro para string
+;	SAIDA:
+;		CF=1 se iguais, CF=0 caso contrário
+;--------------------------------------------------------------------
 
-; void toLower(char *c:AX){
-; 	while(*c != '\0'){
-; 		if(*c >= 'a' && *c <= 'z')
-; 			*c = *c - 32;
-; 	}
-; }
+checkEOFMarker proc near
+	cmp byte ptr [bx], 'f'
+	jne checkEOFMarkerNE
+	cmp byte ptr [1 + bx], 'i'
+	jne checkEOFMarkerNE
+	cmp byte ptr [2 + bx], 'm'
+	jne checkEOFMarkerNE
+	cmp byte ptr [3 + bx], 0
+	jne checkEOFMarkerNE
+	stc
+	ret
+	checkEOFMarkerNE:
+		clc
+		ret
+checkEOFMarker endp
 
-; int:BX strcmp_(char *a:AX, char *b:AX){
-; 	BX = 0;
+;--------------------------------------------------------------------
+;  subString(char* dst:dx, char* src:bx,  int start:ax, int size:cx)
+;	ENTRADA:
+;     dx: ponteiro para destino
+;     bx: ponteiro para origem
+;     ax: posição inicial
+;     cx: tamanho
+;	SAIDA:
+;		CF=0 se sucesso, CF=1 caso contrário
+;--------------------------------------------------------------------
+subString proc near
+	push si
+	push di
+	mov si, bx
+	add si, ax
+
+	mov di, dx
+
+	subStringLoop:
+		mov al, [si]
+		mov [di], al
+		inc si
+		inc di
+		loop subStringLoop
 	
-; 	while(*b != '\0'){
-; 		BX -= *b;
-; 		b++;
-; 	}
-	
-; 	while(*a != '\0'){
-; 		BX += *b;
-; 		a++;
-; 	}
-	
-; 	//return BX
-; }
+	;Não conseui fazer com movsb e não entendi o motivo
+	;cld
+	;rep movsb
 
-; void printError(int line:BX, char *line:DX){
-; 	printString(msg);
-; 	printInt(line:BX);
-; 	printString(line:DX);
-; }
+	; Adiciona o '\0' no final da string
+	mov byte ptr [di], 0
 
-
+	pop di
+	pop si
+	ret
+subString endp
 ; 
 
+;--------------------------------------------------------------------
+
+;--------------------------------------------------------------------
+parseLine proc near
+	push si
+	; Busca o primeiro número
+	lea si, STRINGBUFFER
+	dec si
+	mov current, 0
+	
+	clc ; Limpa a flag de carry
+
+	; Separa a linha em 3 partes com base na virgula
+	parseLineNext:
+		cmp current, 4 ; Verifica se todas as fases foram lidas
+		jg parseLineEnd
+
+		inc si
+		cmp byte ptr [si], ','
+		je parseLineSplit
+		cmp byte ptr [si], 0
+		je parseLineSplit
+		jmp parseLineNext
+		
+
+		parseLineSplit:		
+		inc si
+		lea dx, STRINGBUFFER2 ; Destino
+		mov bx, bx ; String origem
+		mov ax, 0
+		mov cx, si ; Final da substring
+		sub cx, bx ; Tamanho da substring
+		call subString
+	
+		; Verifica se a substring tem tamanho maior que 0
+		lea bx, STRINGBUFFER2
+		call strLen
+		cmp cx, 0
+		je parseLineFindError
+		
+		; Remove os espaços em branco
+		lea bx, STRINGBUFFER2
+		call trimWhitespace
+		jc parseLineFindError
 
 
+		; Verifica se a substring possui apenas números
+		lea bx, STRINGBUFFER2
+		mov ah, '9'
+		mov al, '0'
+		call stringRange
+		jc parseLineFindError
+		
+
+		; Converte a substring para um número
+		lea bx, STRINGBUFFER2
+		call atoi
+
+		; Verifica se o número está dentro do intervalo
+		cmp ax, 0
+		jl parseLineFindError
+		cmp ax, 499
+		jg parseLineFindError
+
+		; Salva o número
+		mov bx, TENSIONPHASES
+		add bx, current
+		mov [bx], ax
+		add current, 2
+
+		; Atualiza o ponteiro para a próxima substring e reinicia o loop
+		mov bx, si
+		jmp parseLineNext
+
+	; Verifica se todas as fases foram lidas e se estão dentro do intervalo
+	parseLineEnd:
+		cmp current, 6
+		jne parseLineFindError
+		jmp parseLineRET
+
+	parseLineFindError:
+		stc
+		mov ERROR, 1
+	
+	parseLineRET:
+		pop si
+		ret
+parseLine endp
+
+;--------------------------------------------------------------------
+;  getCommandLineArgument(char key:al, char* dest:dx)
+;	ENTRADA:
+;		STRINGBUFFER: string com os argumentos da linha de comando
+;	SAIDA:
+;		ERROR=1 se houve erro, ERROR=0 caso contrário
+;--------------------------------------------------------------------
+getCommandLineArgument proc near
+	; al = flag i ou o
+	push ax
+	push bx
+	push cx
+
+	lea bx, STRINGBUFFER
+	mov cx, 0
+	mov ERROR, 0
+
+	dec bx
+	parseCommandLineNext:
+		inc bx
+
+		; Verifica se é o final da string
+		cmp byte ptr [bx], 0
+		je parseCommandLineEmpty
+
+		; Verifica se é o início de um argumento
+		cmp byte ptr [bx], '-'
+		jne parseCommandLineNext
+		cmp byte ptr [1 + bx], al
+		jne parseCommandLineNext
+
+		; Verifica se o argumento está vazio
+		cmp byte ptr [2 + bx], 0
+		je parseCommandLineEmptyError
+		
+		; Verifica o argumento é correto
+		cmp byte ptr [2 + bx], ' '
+		jne parseCommandLineNext
+		
+		add bx, 3 ; Pula para o conteúdo do argumento
+		mov auxw_1, bx ; Salva o início do argumento
+		parseCommandLineRead:
+			cmp byte ptr [bx], ' ' ; Verifica se é o final do argumento
+			je parseCommandLineEnd
+
+			cmp byte ptr [bx], 0 ; Verifica se é o final da string
+			je parseCommandLineEnd
+
+			inc cx
+			inc bx
+			jmp parseCommandLineRead
+	
+	parseCommandLineEnd:
+		cmp cx, 0
+		je parseCommandLineEmptyError
+
+		mov ax, 0 ; Define a posição inicial para 0
+		mov bx, auxw_1 ; Define o ponteiro para o início do argumento
+		mov dx, dx ; Define o ponteiro para o destino
+		mov cx, cx ; Define o tamanho do argumento
+		call subString
+		jmp parseCommandLineRet
+
+	parseCommandLineEmptyError:
+		mov ERROR, 1
+
+	parseCommandLineEmpty:
+	parseCommandLineRet:
+	pop cx	
+	pop bx
+	pop ax
+
+	ret
+getCommandLineArgument endp
+
+;--------------------------------------------------------------------
+;  strLen(char *string:bx)
+;	ENTRADA:
+;		BX: string a ser medida
+;	SAIDA:
+;		CX: tamanho da string
+;--------------------------------------------------------------------
+strLen proc near
+	push bx
+	mov cx, 0
+	strLenLoop:
+		cmp byte ptr [bx], 0
+		je strLenEnd
+		inc bx
+		inc cx
+		jmp strLenLoop
+	strLenEnd:
+	pop bx
+	ret
+strLen endp
+
+;--------------------------------------------------------------------
+;  stringRange(char *string:bx, char min:al, char max:ah)
+;	ENTRADA:
+;		BX: string para verificar
+;		AL: valor mínimo
+;		AH: valor máximo
+;	SAIDA:
+;		Carry=1 se fora do intervalo, Carry=0 caso contrário
+;--------------------------------------------------------------------
+stringRange proc near
+	push bx
+	clc ; Limpa a flag de carry
+	stringRangeLoop:
+		cmp byte ptr [bx], 0
+		je stringRangeEnd
+		cmp byte ptr [bx], al
+		jl stringRangeError
+		cmp byte ptr [bx], ah
+		jg stringRangeError
+		inc bx
+		jmp stringRangeLoop
+
+	stringRangeError:
+		stc ; Define a flag de carry = 1
+	stringRangeEnd:
+	pop bx
+	ret
+stringRange endp
+
+;--------------------------------------------------------------------
+;  trimWhitespace(char *string:bx)
+;	ENTRADA:
+;		BX: string remover os espaços em branco
+;	SAIDA:
+;		BX: string sem espaços em branco
+;       Carry=1 se houve erro, Carry=0 caso contrário
+;--------------------------------------------------------------------
+trimWhitespace proc near
+	push ax 
+	push cx
+	push si
+	push bx
+	; AX: Sincio da string
+	; CX: tamanho da string
+	mov si, bx
+	mov cx, 0
+	dec si
+
+	; Busca o primeiro caractere diferente de espaço
+	trimWhitespaceFStart:
+		inc si
+		cmp byte ptr [si], 0
+		je trimWhitespaceError
+		cmp byte ptr [si], ' '
+		je trimWhitespaceFStart
+		cmp byte ptr [si], TAB
+		je trimWhitespaceFStart
+		mov ax, si ; Salva o início da string
+	
+	; Busca o último caractere diferente de espaço
+		pop bx ; Recupera o início da string
+		push bx ; Salva o início da string
+	call strLen
+	mov si, bx ; Inicializa o ponteiro para o final da string
+	add si, cx ; Adiciona o tamanho da string
+	
+	; Busca o último caractere diferente de espaço
+	trimWhitespaceFEnd:
+		dec si
+		cmp byte ptr [si], ' '
+		je trimWhitespaceFEnd
+		cmp byte ptr [si], TAB
+		je trimWhitespaceFEnd
+		
+	; Copia a string para o início da string original
+		pop dx
+		push dx
+	mov bx, ax
+	mov ax, 0
+	mov cx, si
+	sub cx, bx
+	call subString
+	
+	trimWhitespaceEnd:
+	pop bx
+	pop si
+	pop cx
+	pop ax
+	ret
+
+	trimWhitespaceError:
+		stc
+		jmp trimWhitespaceEnd
+
+trimWhitespace endp
+
+;--------------------------------------------------------------------
+;  checkTensionsForQuality()
+;	SAIDA:
+;       Carry=1 se fora do intervalo, Carry=0 caso contrário
+;--------------------------------------------------------------------
+checkTensionsForQuality proc near
+	push ax
+	push bx
+	push cx
+	push dx
+	clc 	; Limpa a flag de carry
+
+	mov ax, TENSION 
+	add ax, 10 ; Tolera +10V de variação
+	mov dx, TENSION
+	sub dx, 10 ; Tolera -10V de variação
+
+	; Verifica se a tensão está dentro do intervalo
+	mov cx, 2
+	mov bx, TENSIONPHASES
+	checkTensionsForQualityLoop:
+		cmp [bx], dx
+		jl checkTensionsForQualityNotInRange
+		cmp [bx], ax
+		jg checkTensionsForQualityNotInRange
+		add bx, 2
+		loop checkTensionsForQualityLoop
+	
+	jmp checkTensionsForQualityRET
+
+	checkTensionsForQualityNotInRange:
+	stc
+
+	checkTensionsForQualityRET:
+	pop dx
+	pop cx
+	pop bx
+	pop ax
+	ret
+checkTensionsForQuality endp
+
+;--------------------------------------------------------------------
+;  checkLowTensions()
+;	SAIDA:
+;       Carry=1 se todas a tensões estiver abaixo de 10, Carry=0 caso contrário
+;--------------------------------------------------------------------
+checkLowTensions proc near
+	push ax
+	push bx
+	push cx
+	push dx
+
+	mov ax, 10
+
+	; Verifica se a tensão está dentro do intervalo
+	mov cx, 3
+	mov bx, TENSIONPHASES
+	checkLowTensionsLoop:
+		cmp [bx], ax
+		jg checkLowTensionsMoreThan10
+		add bx, 2
+		loop checkLowTensionsLoop
+	
+	stc
+	jmp checkLowTensionsRET		
+	
+	checkLowTensionsMoreThan10:
+		clc
+		jmp checkLowTensionsRET
+
+	checkLowTensionsRET:
+	pop dx
+	pop cx
+	pop bx
+	pop ax
+	ret
+checkLowTensions endp
+
+;--------------------------------------------------------------------
+;  printResultsToScreen()
+;	SAIDA:
+;       Imprime os resultados na tela
+;--------------------------------------------------------------------
+printResultsToScreen proc near
+	push ax
+	push bx
+
+	lea bx, O_inputFile
+	call puts
+	lea bx, INPUTFILE
+	call puts
+	lea bx, S_newLine
+	call puts
+
+	lea bx, O_tension
+	call puts
+	mov ax, TENSION
+	lea bx, STRINGBUFFER
+	call itoa
+	call puts
+	lea bx, S_newLine
+	call puts
+
+	lea bx, O_totalTime
+	call puts
+	mov ax, TOTALTIME
+	lea bx, STRINGBUFFER
+	call formatTime
+	call puts
+	lea bx, S_newLine
+	call puts
+
+	lea bx, O_tensionQuality
+	call puts
+	mov ax, TENSIONQUALITY
+	lea bx, STRINGBUFFER
+	call itoa
+	call puts
+	lea bx, S_newLine
+	call puts
+
+	lea bx, O_noTension
+	call puts
+	mov ax, NOTENSION
+	lea bx, STRINGBUFFER
+	call itoa
+	call puts
+	lea bx, S_newLine
+	call puts
+
+	pop bx
+	pop ax
+	ret
+
+printResultsToScreen endp
+
+;--------------------------------------------------------------------
+;  writeResultsToFile()
+;	SAIDA:
+;       Imprime os resultados na tela
+;--------------------------------------------------------------------
+writeResultsToFile proc near
+	
+	push ax
+	push bx
+	push dx
+	push cx
+
+	lea dx, O_inputFile
+	call fputs
+	lea dx, INPUTFILE
+	call fputs
+	lea dx, S_newLine
+	call fputs
+	
+	lea dx, O_tension
+	call fputs
+	mov ax, TENSION
+	lea bx, STRINGBUFFER
+	call itoa
+	lea dx, STRINGBUFFER
+	call fputs
+	lea dx, S_newLine
+	call fputs
+
+	lea dx, O_totalTime
+	call fputs
+	mov ax, TOTALTIME
+	lea bx, STRINGBUFFER
+	call formatTime
+	lea dx, STRINGBUFFER
+	call fputs
+	lea dx, S_newLine
+	call fputs
+
+	lea dx, O_tensionQuality
+	call fputs
+	mov ax, TENSIONQUALITY
+	lea bx, STRINGBUFFER
+	call itoa
+	lea dx, STRINGBUFFER
+	call fputs
+	lea dx, S_newLine
+	call fputs
+
+	lea dx, O_noTension
+	call fputs
+	mov ax, NOTENSION
+	lea bx, STRINGBUFFER
+	call itoa
+	lea dx, STRINGBUFFER
+	call fputs
+	lea dx, S_newLine
+	call fputs
+		
+	pop cx
+	pop dx
+	pop bx
+	pop ax
+	ret
+writeResultsToFile endp 
+
+;--------------------------------------------------------------------
+;  fputs(char* s:dx)
+;	ENTRADA:
+;		dx: ponteiro para string
+;	SAIDA:
+;		CF=0 se sucesso, CF=1 caso contrário
+;--------------------------------------------------------------------
+fputs proc near
+	push dx
+
+	mov bx, dx
+	call strLen
+
+	mov bx, FILEHANDLE
+	mov ah, 40h ; Escreve no arquivo
+	int 21h
+	cmp ax, cx ; Verifica se o número de bytes escritos é igual ao tamanho da string
+	jne fputsError
+	jmp fputsRET
+
+	fputsError:
+	stc
+	fputsRET:
+	pop dx
+	ret
+
+fputs endp
+;--------------------------------------------------------------------
+;  itoa(int value:ax, char* dest:bx)
+;	ENTRADA:
+;		AX: valor a ser convertido
+;		BX: ponteiro para destino
+;	SAIDA:
+;		BX: string com o valor convertido
+;--------------------------------------------------------------------
+; TODO: Substituir por código proprio
+itoa proc near
+    push ax         ; Save AX register
+    push bx         ; Save BX register
+    push dx         ; Save DX register
+    push di         ; Save DI register
+
+    xor cx, cx      ; Clear CX register (will be used as counter)
+    mov di, bx      ; DI = Destination (BX points to the destination string)
+
+    mov bx, 10      ; BX = 10 (for dividing)
+
+convert_loop:
+    xor dx, dx      ; Clear DX
+    div bx          ; Divide AX by BX (quotient in AX, remainder in DX)
+    add dl, '0'     ; Convert remainder to ASCII
+    push dx         ; Store the digit on the stack
+    inc cx          ; Increment counter
+
+    test ax, ax     ; Check if quotient is zero
+    jnz convert_loop ; If not zero, continue the loop
+
+store_loop:
+    pop dx          ; Retrieve digit from stack
+    mov [di], dl    ; Store digit in destination buffer
+    inc di          ; Move to next position in buffer
+    loop store_loop ; Continue until counter (CX) becomes zero
+
+    mov [di], 0   ; Null-terminate the string
+
+    pop di          ; Restore DI register
+    pop dx          ; Restore DX register
+    pop bx          ; Restore BX register
+    pop ax          ; Restore AX register
+    ret             ; Return from procedure
+itoa endp
+
+;--------------------------------------------------------------------
+;  formatTime(int value:ax, char* dest:bx)
+;	ENTRADA:
+;		AX: valor a ser convertido
+;		BX: ponteiro para destino
+;	SAIDA:
+;		BX: string com o valor convertido
+;--------------------------------------------------------------------
+formatTime proc near
+	push ax
+	push bx
+	push cx
+	push dx
+
+	cmp ax, 60 ; Verifica se o valor é menor que 60, ou seja, se é menor que 1 minuto
+	jl formatTimeSeconds
+	cmp ax,	3600 ; Verifica se o valor é menor que 3600, ou seja, se é menor que 1 hora
+	jl formatTimeMinutes
+	
+	; Horas
+	; Divisão inteira por 3600
+	mov dx, 0
+	mov cx, 3600
+	div cx		; AX = Horas, DX = Resto
+	
+	call itoa
+	cmp ax, 10
+	jge formatTime2Digits
+	mov byte ptr [bx+1], ':'
+	add bx, 2
+	mov ax, dx
+	jmp formatTimeMinutes
+
+	formatTime2Digits:
+		mov byte ptr [bx+2], ':'
+		add bx, 3
+		mov ax, dx
+
+	formatTimeMinutes:
+	; Minutos
+	; Divisão inteira por 60
+	mov dx, 0
+	mov cx, 60
+	div cx		; AX = Minutos, DX = Resto
+	
+	call itoa
+	cmp ax, 10
+	jge formatTime2Digits_
+	mov byte ptr [bx+1], ':'
+	mov byte ptr [bx+2], 0
+	add bx, 2
+	mov ax, dx
+	jmp formatTimeSeconds
+
+	formatTime2Digits_:
+		mov byte ptr [bx+2], ':'
+		add bx, 3
+		mov ax, dx
+
+	
+	formatTimeSeconds:
+	; Segundos
+	; Coloca os segundos no destino
+	cmp ax, 10
+	jge formatTime2Digits__
+	mov byte ptr [bx], '0'
+	inc bx
+	formatTime2Digits__:
+	call itoa
+
+	mov byte ptr [bx+2], 0
+	pop dx
+	pop cx
+	pop bx
+	pop ax
+	ret	
+
+formatTime endp
+
+;####################################################################
+;       Os procedimentos abaixo foram adaptados dos códigos 
+; disponibilizados pelo professor no material de apoio da disciplina
+;####################################################################
+
+;--------------------------------------------------------------------
+;Escrever um string na tela
+;void puts(char *s:BX) {
+;	while(*s!='\0') {
+;		putchar(*s)
+; 		++s;
+;	}
+;   putchar('\n');
+;}
+;--------------------------------------------------------------------
+puts	proc	near
+
+;	While (*s!='\0') {
+	mov		dl,[bx]
+	cmp		dl,0
+	je		ps_1
+
+;	putchar(*s)
+	push	bx
+	mov		ah,2
+	int		21H
+	pop		bx
+
+;		++s;
+	inc		bx
+
+	jmp		puts
+
+	; putchar('\n');
+	mov 	dl,CR
+	mov		ah,2
+	int		21H
+	mov 	dl,LF
+	mov		ah,2
+	int		21H
+ps_1:
+	ret
+	
+puts	endp
+
+;--------------------------------------------------------------------
+;Converte um ASCII-DECIMAL para HEXA
+;Entra: (S) -> DS:BX -> Ponteiro para o string de origem
+;Sai:	(A) -> AX -> Valor "Hex" resultante
+;Algoritmo:
+;	A = 0;
+;	while (*S!='\0') {
+;		A = 10 * A + (*S - '0')
+;		++S;
+;	}
+;	return
+;--------------------------------------------------------------------
+atoi	proc near
+
+		; A = 0;
+		mov		ax,0
+		
+atoi_2:
+		; while (*S!='\0') {
+		cmp		byte ptr[bx], 0
+		jz		atoi_1
+
+		; 	A = 10 * A
+		mov		cx,10
+		mul		cx
+
+		; 	A = A + *S
+		mov		ch,0
+		mov		cl,[bx]
+		add		ax,cx
+
+		; 	A = A - '0'
+		sub		ax,'0'
+
+		; 	++S
+		inc		bx
+		
+		;}
+		jmp		atoi_2
+
+atoi_1:
+		; return
+		ret
+
+atoi	endp
+
+
+debugM proc near
+	push ax
+	push bx
+	push cx
+	push dx
+	push si
+	push di
+
+	lea bx, DEBUGMSG
+	call puts
+
+	pop di
+	pop si
+	pop dx
+	pop cx
+	pop bx
+	pop ax
+	ret
+debugM endp
 ;--------------------------------------------------------------------
 	end
 ;--------------------------------------------------------------------
