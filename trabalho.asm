@@ -8,9 +8,6 @@
 ;                    Processador 8086 da INTEL
 ; 				     Adriel de Souza | 00579100
 ;====================================================================
-; Problemas conhecidos:
-; FIXME: Não verifica EOF apenas a string "fim"
-
 
 .model small
 .stack
@@ -70,7 +67,6 @@ O_tensionQuality db "Qualidade da tensao: ", 0
 O_noTension db "Tempo sem tensao: ", 0
 
 ; Outras
-I_end db "fim", 0
 S_newLine db CR, LF, 0
 
 ; Variáveis auxiliares
@@ -79,7 +75,6 @@ auxw_1 dw 0
 current dw 0
 
 ; Variáveis utulizadas por prociementos disponibilizados pelo professor
-
 sw_n	dw	0
 sw_f	db	0
 sw_m	dw	0
@@ -428,8 +423,6 @@ fgets proc near
 		pop dx
 		pop ax
 		jmp fgetsENDP
-
-
 fgetsENDP: 
 fgets endp
 
@@ -440,23 +433,38 @@ fgets endp
 ;	SAIDA:
 ;		CF=1 se iguais, CF=0 caso contrário
 ;--------------------------------------------------------------------
-
 checkEOFMarker proc near
-	cmp byte ptr [bx], 'f'
-	jne checkEOFMarkerNE
-	cmp byte ptr [1 + bx], 'i'
-	jne checkEOFMarkerNE
-	cmp byte ptr [2 + bx], 'm'
-	jne checkEOFMarkerNE
+	push bx
+	push ax
+	
+	mov al, byte ptr [bx]
+	and al, 5Fh	
+	cmp al, 'F'
+	jne checkEOFMarker_NotEOF
+
+	mov al, byte ptr [1 + bx]
+	and al, 5Fh
+	cmp al, 'I'
+	jne checkEOFMarker_NotEOF
+
+	mov al, byte ptr [2 + bx]
+	and al, 5Fh
+	cmp al, 'M'
+	jne checkEOFMarker_NotEOF
+
 	cmp byte ptr [3 + bx], 0
-	jne checkEOFMarkerNE
-	stc
-	ret
-	checkEOFMarkerNE:
+	jne checkEOFMarker_NotEOF
+
+	stc 
+	jmp checkEOFMarker_RET
+
+	checkEOFMarker_NotEOF:
 		clc
+	checkEOFMarker_RET:
+		pop ax
+		pop bx
 		ret
 checkEOFMarker endp
-
 ;--------------------------------------------------------------------
 ;  subString(char* dst:dx, char* src:bx,  int start:ax, int size:cx)
 ;	ENTRADA:
@@ -496,7 +504,11 @@ subString endp
 ; 
 
 ;--------------------------------------------------------------------
-
+;  parseLine(char *string:bx)
+;	ENTRADA:
+;		BX: string a ser processada
+;	SAIDA:
+;		ERROR=1 se houve erro, ERROR=0 caso contrário
 ;--------------------------------------------------------------------
 parseLine proc near
 	push ax
@@ -533,8 +545,6 @@ parseLine proc near
 		mov ax, 0
 		mov cx, si ; Final da substring
 		sub cx, bx ; Tamanho da substring
-;		cmp cx, 0 ; Verifica se a substring tem tamanho maior que 0
-;		je parseLineFindError
 		call subString
 	
 		; Verifica se a substring tem tamanho maior que 0
@@ -561,11 +571,11 @@ parseLine proc near
 		lea bx, STRINGBUFFER2
 		call atoi
 
-		; Verifica se o número está dentro do intervalo
+		; Verifica se o número está dentro do intervalo (0, 499)
 		cmp ax, 0
-		jl parseLineFindError
+		jle parseLineFindError
 		cmp ax, 499
-		jg parseLineFindError
+		jge parseLineFindError
 
 		; Salva o número
 		mov bx, TENSIONPHASES
@@ -1057,50 +1067,6 @@ fputs proc near
 	ret
 
 fputs endp
-;--------------------------------------------------------------------
-;  itoa(int value:ax, char* dest:bx)
-;	ENTRADA:
-;		AX: valor a ser convertido
-;		BX: ponteiro para destino
-;	SAIDA:
-;		BX: string com o valor convertido
-;--------------------------------------------------------------------
-; TODO: Substituir por código proprio
-itoa proc near
-    push ax         ; Save AX register
-    push bx         ; Save BX register
-    push dx         ; Save DX register
-    push di         ; Save DI register
-
-    xor cx, cx      ; Clear CX register (will be used as counter)
-    mov di, bx      ; DI = Destination (BX points to the destination string)
-
-    mov bx, 10      ; BX = 10 (for dividing)
-
-convert_loop:
-    xor dx, dx      ; Clear DX
-    div bx          ; Divide AX by BX (quotient in AX, remainder in DX)
-    add dl, '0'     ; Convert remainder to ASCII
-    push dx         ; Store the digit on the stack
-    inc cx          ; Increment counter
-
-    test ax, ax     ; Check if quotient is zero
-    jnz convert_loop ; If not zero, continue the loop
-
-store_loop:
-    pop dx          ; Retrieve digit from stack
-    mov [di], dl    ; Store digit in destination buffer
-    inc di          ; Move to next position in buffer
-    loop store_loop ; Continue until counter (CX) becomes zero
-
-    mov [di], 0   ; Null-terminate the string
-
-    pop di          ; Restore DI register
-    pop dx          ; Restore DX register
-    pop bx          ; Restore BX register
-    pop ax          ; Restore AX register
-    ret             ; Return from procedure
-itoa endp
 
 ;--------------------------------------------------------------------
 ;  formatTime(int value:ax, char* dest:bx)
@@ -1186,6 +1152,98 @@ formatTime endp
 ;       Os procedimentos abaixo foram adaptados dos códigos 
 ; disponibilizados pelo professor no material de apoio da disciplina
 ;####################################################################
+
+;--------------------------------------------------------------------
+; itoa(WORD n:ax, char* dest:bx)
+; Converte um número inteiro para string
+; ENTADA:
+;	AX: número inteiro
+;	BX: ponteiro para destino
+; SAIDA:
+;	BX: string com o valor convertido
+;-------------------------------------------------------------------
+itoa proc near
+	push ax
+	push bx
+	push cx
+	push dx
+	push bp
+
+;void sprintf_w(char *string, WORD n) {
+	mov		sw_n,ax
+
+;	k=5;
+	mov		cx,5
+	
+;	m=10000;
+	mov		sw_m,10000
+	
+;	f=0;
+	mov		sw_f,0
+	
+;	do {
+sw_do:
+
+;		quociente = n / m : resto = n % m;	// Usar instru��o DIV
+	mov		dx,0
+	mov		ax,sw_n
+	div		sw_m
+	
+;		if (quociente || f) {
+;			*string++ = quociente+'0'
+;			f = 1;
+;		}
+	cmp		al,0
+	jne		sw_store
+	cmp		sw_f,0
+	je		sw_continue
+sw_store:
+	add		al,'0'
+	mov		[bx],al
+	inc		bx
+	
+	mov		sw_f,1
+sw_continue:
+	
+;		n = resto;
+	mov		sw_n,dx
+	
+;		m = m/10;
+	mov		dx,0
+	mov		ax,sw_m
+	mov		bp,10
+	div		bp
+	mov		sw_m,ax
+	
+;		--k;
+	dec		cx
+	
+;	} while(k);
+	cmp		cx,0
+	jnz		sw_do
+
+;	if (!f)
+;		*string++ = '0';
+	cmp		sw_f,0
+	jnz		sw_continua2
+	mov		[bx],'0'
+	inc		bx
+sw_continua2:
+
+
+;	*string = '\0';
+	mov		byte ptr[bx],0
+		
+;}
+	pop bp
+	pop dx
+	pop cx
+	pop bx
+	pop ax
+	
+	ret
+		
+itoa endp
 
 ;--------------------------------------------------------------------
 ;Escrever um string na tela
