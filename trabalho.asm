@@ -10,7 +10,6 @@
 ;====================================================================
 ; Problemas conhecidos:
 ; FIXME: Não verifica EOF apenas a string "fim"
-; FIXME: Entra em loop se uma linha tiver ', ,'
 
 
 .model small
@@ -44,6 +43,7 @@ CURRENTLINE dw 0 ; Linha atual do arquivo de entrada
 TOTALTIME dw 0 ; Tempo total de medições
 TENSIONQUALITY dw 0 ; Qualidade da tensão
 NOTENSION dw 0 ; Tempo sem tensão
+FILE_EOF db 0 ; Flag de final de arquivo
 
 ; Variáveis para as tensões de cada fase
 TENSIONPHASES dw 3 dup (0)
@@ -76,8 +76,6 @@ S_newLine db CR, LF, 0
 ; Variáveis auxiliares
 auxb_1 db 0
 auxw_1 dw 0
-numS dw 0
-numE dw 0
 current dw 0
 
 ; Variáveis utulizadas por prociementos disponibilizados pelo professor
@@ -85,7 +83,6 @@ current dw 0
 sw_n	dw	0
 sw_f	db	0
 sw_m	dw	0
-
 
 DEBUGMSG db "DEBUG", CR, LF, 0
 
@@ -214,18 +211,19 @@ DEBUGMSG db "DEBUG", CR, LF, 0
 	mov FILEHANDLE, ax ; Salva o handle do arquivo de entrada em FILEHANDLE
 	
 	mov CURRENTLINE, 0 ; Inicializa a variável que armazena a linha atual do arquivo de entrada
-	inputFileLoop:
+	inputFileLoop:		
 		inc CURRENTLINE ; Incrementa a linha atual do arquivo de entrada
+
+		; Se o arquivo de entrada estiver no final, encerra o loop
+		cmp FILE_EOF, 1
+		je readFileEnd	
 
 		; Realiza a leitura de uma linha do arquivo de entrada
 		mov ax, FILEHANDLE
 		lea bx, STRINGBUFFER
 		call fgets
-
-		; Se o tamanho da linha lida for 0, encerra o loop
-		cmp cx, 0
-		je exitProgram
 		
+
 		; Se a linha lida for menor que 3, pula para o manipulador de erro
 		cmp cx, 3
 		jl inputLineError
@@ -334,16 +332,19 @@ fgetc proc near
 
 	mov 	dx, bx
 	mov 	bx, ax
+	mov 	FILE_EOF, 0
 
 
 	mov		cx,1			; Tamanho de leitura (1 byte)
 	mov		ah,3Fh	
 	int		21h
-	jnc 	fgetcRET		; Se não tiver erro de leitura, retorna
 	cmp		ax, 0			; Se for EOF retorna 0
-	jne 	fgetcRET
+	je 		fgetcEOF
+	jnc 	fgetcRET		; Se não tiver erro de leitura, retorna
 	mov byte ptr [bx], 0
 	
+	fgetcEOF:
+	mov FILE_EOF, 1
 	fgetcRET:	
 	pop cx
 	pop bx
@@ -375,6 +376,8 @@ fgets proc near
 	fgetsL:
 		call fgetc
 		jc fgetsError		; Se teve algum erro
+		cmp FILE_EOF, 1
+		je fgetsEND			; Se for EOF encerra
 
 		; Se for CR ou LF encerra verifica o próximo digito
 		cmp byte ptr [bx], CR
@@ -524,12 +527,14 @@ parseLine proc near
 		mov ax, 0
 		mov cx, si ; Final da substring
 		sub cx, bx ; Tamanho da substring
+;		cmp cx, 0 ; Verifica se a substring tem tamanho maior que 0
+;		je parseLineFindError
 		call subString
 	
 		; Verifica se a substring tem tamanho maior que 0
 		lea bx, STRINGBUFFER2
 		call strLen
-		cmp cx, 0
+		cmp cx, 0 ; Verifica se a substring tem tamanho maior que 0
 		je parseLineFindError
 		
 		; Remove os espaços em branco
@@ -734,11 +739,13 @@ trimWhitespace proc near
 		je trimWhitespaceFStart
 		cmp byte ptr [si], TAB
 		je trimWhitespaceFStart
-		mov ax, si ; Salva o início da string
+	
+	mov ax, si ; Salva o início da string
 	
 	; Busca o último caractere diferente de espaço
-		pop bx ; Recupera o início da string
-		push bx ; Salva o início da string
+	pop bx ; Recupera o início da string
+	push bx ; Salva o início da string
+
 	call strLen
 	mov si, bx ; Inicializa o ponteiro para o final da string
 	add si, cx ; Adiciona o tamanho da string
@@ -752,12 +759,19 @@ trimWhitespace proc near
 		je trimWhitespaceFEnd
 		
 	; Copia a string para o início da string original
-		pop dx
-		push dx
-	mov bx, ax
-	mov ax, 0
-	mov cx, si
-	sub cx, bx
+		pop dx ; Recupera o início da string
+		push dx ; Salva o início da string
+
+	; Verifica se a string tem tamanho maior que 0
+
+	mov bx, ax ; Inicializa o ponteiro para o início da substring
+	mov ax, 0 ; Inicializa a posição inicial
+	mov cx, si ; Inicializa o tamanho da string
+	sub cx, bx ; Calcula o tamanho da string
+
+	;cmp cx, 0 ; Verifica se a string tem tamanho maior que 0
+	;jle trimWhitespaceError
+
 	call subString
 	
 	trimWhitespaceEnd:
