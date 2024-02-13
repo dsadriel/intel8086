@@ -750,13 +750,19 @@ trimWhitespace proc near
 	mov si, bx ; Inicializa o ponteiro para o final da string
 	add si, cx ; Adiciona o tamanho da string
 	
+	
 	; Busca o último caractere diferente de espaço
+	pop bx ; Recupera o início da string
+	push bx ; Salva o início da string
 	trimWhitespaceFEnd:
 		dec si
 		cmp byte ptr [si], ' '
 		je trimWhitespaceFEnd
 		cmp byte ptr [si], TAB
 		je trimWhitespaceFEnd
+		cmp si, bx
+		jl trimWhitespaceError
+		je trimWhitespaceEnd
 		
 	; Copia a string para o início da string original
 		pop dx ; Recupera o início da string
@@ -768,10 +774,6 @@ trimWhitespace proc near
 	mov ax, 0 ; Inicializa a posição inicial
 	mov cx, si ; Inicializa o tamanho da string
 	sub cx, bx ; Calcula o tamanho da string
-
-	;cmp cx, 0 ; Verifica se a string tem tamanho maior que 0
-	;jle trimWhitespaceError
-
 	call subString
 	
 	trimWhitespaceEnd:
