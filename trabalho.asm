@@ -262,7 +262,7 @@ DEBUGMSG db "DEBUG", CR, LF, 0
 
 		lea bx, E_lineError_2
 		call puts
-		lea bx, STRINGBUFFER
+		mov bx, OFFSET STRINGBUFFER
 		call puts
 		lea bx, S_newLine
 		call puts
@@ -772,7 +772,11 @@ trimWhitespace proc near
 		je trimWhitespaceFEnd
 		cmp byte ptr [si], TAB
 		je trimWhitespaceFEnd
+		cmp byte ptr [si], ','
+		je trimWhitespaceFEnd
+
 		cmp si, bx
+		;;je trimWhitespaceEnd
 		jl trimWhitespaceError
 		
 	; Copia a string para o início da string original
@@ -785,6 +789,7 @@ trimWhitespace proc near
 	mov ax, 0 ; Inicializa a posição inicial
 	mov cx, si ; Inicializa o tamanho da string
 	sub cx, bx ; Calcula o tamanho da string
+	add cx, 1 ; Adiciona 1 para incluir o último caractere
 	call subString
 	
 	trimWhitespaceEnd:
