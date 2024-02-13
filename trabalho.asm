@@ -499,7 +499,13 @@ subString endp
 
 ;--------------------------------------------------------------------
 parseLine proc near
+	push ax
+	push bx
+	push cx
+	push dx
 	push si
+	push di
+	
 	; Busca o primeiro número
 	lea si, STRINGBUFFER
 	dec si
@@ -582,8 +588,14 @@ parseLine proc near
 		mov ERROR, 1
 	
 	parseLineRET:
-		pop si
-		ret
+	pop di
+	pop si
+	pop dx
+	pop cx
+	pop bx
+	pop ax
+	
+	ret
 parseLine endp
 
 ;--------------------------------------------------------------------
@@ -762,7 +774,6 @@ trimWhitespace proc near
 		je trimWhitespaceFEnd
 		cmp si, bx
 		jl trimWhitespaceError
-		je trimWhitespaceEnd
 		
 	; Copia a string para o início da string original
 		pop dx ; Recupera o início da string
