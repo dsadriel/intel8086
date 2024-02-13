@@ -8,6 +8,9 @@
 ;                    Processador 8086 da INTEL
 ; 				     Adriel de Souza | 00579100
 ;====================================================================
+; Problemas conhecidos:
+; FIXME: Não verifica EOF apenas a string "fim"
+; FIXME: Entra em loop se uma linha tiver ', ,'
 
 
 .model small
@@ -60,6 +63,7 @@ E_outputFileError db "Erro ao abrir o arquivo de saída", CR, LF, 0
 
 ; Resultados
 O_inputFile db "Arquivo de entrada: ", 0
+O_outputFile db "Arquivo de saida: ", 0
 O_tension db "Valor da tensao: ", 0
 O_totalTime db "Tempo total de medicoes: ", 0
 O_tensionQuality db "Qualidade da tensao: ", 0
@@ -855,50 +859,45 @@ checkLowTensions endp
 printResultsToScreen proc near
 	push ax
 	push bx
-
+	push si
+	
 	lea bx, O_inputFile
-	call puts
-	lea bx, INPUTFILE
-	call puts
-	lea bx, S_newLine
-	call puts
+	lea si, INPUTFILE
+	call puts2
 
-	lea bx, O_tension
-	call puts
+	lea bx, O_outputFile
+	lea si, OUTPUTFILE
+	call puts2
+
 	mov ax, TENSION
 	lea bx, STRINGBUFFER
 	call itoa
-	call puts
-	lea bx, S_newLine
-	call puts
+	lea bx, O_tension
+	lea si, STRINGBUFFER
+	call puts2
 
-	lea bx, O_totalTime
-	call puts
 	mov ax, TOTALTIME
 	lea bx, STRINGBUFFER
 	call formatTime
-	call puts
-	lea bx, S_newLine
-	call puts
+	lea bx, O_totalTime
+	lea si, STRINGBUFFER
+	call puts2
 
-	lea bx, O_tensionQuality
-	call puts
 	mov ax, TENSIONQUALITY
 	lea bx, STRINGBUFFER
-	call itoa
-	call puts
-	lea bx, S_newLine
-	call puts
+	call formatTime
+	lea bx, O_tensionQuality
+	lea si, STRINGBUFFER
+	call puts2
 
-	lea bx, O_noTension
-	call puts
 	mov ax, NOTENSION
 	lea bx, STRINGBUFFER
-	call itoa
-	call puts
-	lea bx, S_newLine
-	call puts
+	call formatTime
+	lea bx, O_noTension
+	lea si, STRINGBUFFER
+	call puts2
 
+	pop si
 	pop bx
 	pop ax
 	ret
@@ -918,58 +917,86 @@ writeResultsToFile proc near
 	push cx
 
 	lea dx, O_inputFile
-	call fputs
-	lea dx, INPUTFILE
-	call fputs
-	lea dx, S_newLine
-	call fputs
-	
-	lea dx, O_tension
-	call fputs
+	lea si, INPUTFILE
+	call fputs2
+
+	lea dx, O_outputFile
+	lea si, OUTPUTFILE
+	call fputs2
+
 	mov ax, TENSION
 	lea bx, STRINGBUFFER
 	call itoa
-	lea dx, STRINGBUFFER
-	call fputs
-	lea dx, S_newLine
-	call fputs
+	lea dx, O_tension
+	lea si, STRINGBUFFER
+	call fputs2
 
-	lea dx, O_totalTime
-	call fputs
 	mov ax, TOTALTIME
 	lea bx, STRINGBUFFER
 	call formatTime
-	lea dx, STRINGBUFFER
-	call fputs
-	lea dx, S_newLine
-	call fputs
+	lea dx, O_totalTime
+	lea si, STRINGBUFFER
+	call fputs2
 
-	lea dx, O_tensionQuality
-	call fputs
 	mov ax, TENSIONQUALITY
 	lea bx, STRINGBUFFER
-	call itoa
-	lea dx, STRINGBUFFER
-	call fputs
-	lea dx, S_newLine
-	call fputs
+	call formatTime
+	lea dx, O_tensionQuality
+	lea si, STRINGBUFFER
+	call fputs2
 
-	lea dx, O_noTension
-	call fputs
 	mov ax, NOTENSION
 	lea bx, STRINGBUFFER
-	call itoa
-	lea dx, STRINGBUFFER
-	call fputs
-	lea dx, S_newLine
-	call fputs
-		
+	call formatTime
+	lea dx, O_noTension
+	lea si, STRINGBUFFER
+	call fputs2
+
 	pop cx
 	pop dx
 	pop bx
 	pop ax
 	ret
 writeResultsToFile endp 
+
+;--------------------------------------------------------------------
+;  puts2(char* s:si, char* s:bx)
+;	ENTRADA:
+;		 SI: ponteiro para string
+;		 BX: ponteiro para string
+;--------------------------------------------------------------------
+puts2 proc near
+	push bx
+
+	call puts
+	mov bx, si
+	call puts
+	lea bx, S_newLine
+	call puts
+
+	pop bx
+	ret 
+puts2 endp
+
+;--------------------------------------------------------------------
+;  fputs2(char* s:si, char* s:dx)
+;	ENTRADA:
+;		 SI: ponteiro para string
+;		 DX: ponteiro para string
+;--------------------------------------------------------------------
+fputs2 proc near
+	push dx
+
+	call fputs
+	mov dx, si
+	call fputs
+	lea dx, S_newLine
+	call fputs
+
+	pop dx
+	ret 
+fputs2 endp
+
 
 ;--------------------------------------------------------------------
 ;  fputs(char* s:dx)
@@ -1058,7 +1085,7 @@ formatTime proc near
 	push dx
 
 	cmp ax, 60 ; Verifica se o valor é menor que 60, ou seja, se é menor que 1 minuto
-	jl formatTimeSeconds
+	jl formatTimeJustITOA
 	cmp ax,	3600 ; Verifica se o valor é menor que 3600, ou seja, se é menor que 1 hora
 	jl formatTimeMinutes
 	
@@ -1107,10 +1134,10 @@ formatTime proc near
 	; Segundos
 	; Coloca os segundos no destino
 	cmp ax, 10
-	jge formatTime2Digits__
+	jge formatTimeJustITOA
 	mov byte ptr [bx], '0'
 	inc bx
-	formatTime2Digits__:
+	formatTimeJustITOA:
 	call itoa
 
 	mov byte ptr [bx+2], 0
@@ -1121,6 +1148,7 @@ formatTime proc near
 	ret	
 
 formatTime endp
+
 
 ;####################################################################
 ;       Os procedimentos abaixo foram adaptados dos códigos 
@@ -1155,13 +1183,6 @@ puts	proc	near
 
 	jmp		puts
 
-	; putchar('\n');
-	mov 	dl,CR
-	mov		ah,2
-	int		21H
-	mov 	dl,LF
-	mov		ah,2
-	int		21H
 ps_1:
 	ret
 	
