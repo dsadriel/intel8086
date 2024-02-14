@@ -402,12 +402,23 @@ fgets proc near
 
 	
 	fgetsDecFile:
-		mov ah, 42h
-		mov al, 01h
-		mov dx, -1
+		push bx 		; Salva o ponteiro para o buffer
+		
+		mov ah, 42h    ; LSEEK, move o ponteiro para a posição atual - 1
+		mov al, 01h    ; posição atual
+		mov cx, -1	   ; MSB do deslocamento
+		mov dx, -1     ; LSB do deslocamento
+		mov bx, FILEHANDLE
 		int 21h
-		dec dx
+		
+		cmp ax, 1 		; Verifica se houve erro
+		je fgetsError
+		jc fgetsError
+		
+		pop bx         ; Recupera o ponteiro para o buffer
+		jmp fgetsEND
 
+	
 	fgetsError:
 		pop bx			
 		mov [bx], 0		; Define o primeiro char da string como '\0'
@@ -1095,13 +1106,13 @@ formatTime proc near
 	
 	call itoa
 	cmp ax, 10
-	jge formatTime2Digits
+	jge formatTime2DigitsH
 	mov byte ptr [bx+1], ':'
 	add bx, 2
 	mov ax, dx
 	jmp formatTimeMinutes
 
-	formatTime2Digits:
+	formatTime2DigitsH:
 		mov byte ptr [bx+2], ':'
 		add bx, 3
 		mov ax, dx
@@ -1113,21 +1124,23 @@ formatTime proc near
 	mov cx, 60
 	div cx		; AX = Minutos, DX = Resto
 	
-	call itoa
 	cmp ax, 10
-	jge formatTime2Digits_
+	jge formatTime2DigitsM
+	mov byte ptr [bx], '0'
+	inc bx
+	call itoa
 	mov byte ptr [bx+1], ':'
-	mov byte ptr [bx+2], 0
 	add bx, 2
 	mov ax, dx
 	jmp formatTimeSeconds
 
-	formatTime2Digits_:
+	formatTime2DigitsM:
+		call itoa
 		mov byte ptr [bx+2], ':'
 		add bx, 3
 		mov ax, dx
 
-	
+
 	formatTimeSeconds:
 	; Segundos
 	; Coloca os segundos no destino
