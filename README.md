@@ -4,7 +4,7 @@
 | :-: |
 
 <div style="text-align:center">
-Trabalho de Programação – Processador RAMSES</div>
+Trabalho de Programação – Processador 8086 da INTEL</div>
 
 
 # Geral
